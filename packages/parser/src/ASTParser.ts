@@ -96,200 +96,202 @@ class ASTParser {
       let ifStatementLevel = 0;
 
       try {
-        const fileContent: string = fs.readFileSync(path, 'utf8');
-        const ast = parse(fileContent, {
-          sourceType: 'module',
-          plugins: ['typescript', 'jsx'],
-        });
-        traverse(ast, {
-          ImportDeclaration({ node }) {
-            const modulePath = node.source.value;
-            node.specifiers.forEach((specifier) => {
-              const alias = specifier.local.name;
-              let name;
-              switch (specifier.type) {
-                case 'ImportSpecifier':
-                  name =
-                    specifier.imported.type === 'Identifier'
-                      ? specifier.imported.name
-                      : 'No name';
-                  break;
-                case 'ImportDefaultSpecifier':
-                  name = 'default';
-                  break;
-                case 'ImportNamespaceSpecifier':
-                  name = '*';
-                  break;
-              }
-              if (name) {
+        if (fs.existsSync(path) && fs.lstatSync(path).isFile()) {
+          const fileContent: string = fs.readFileSync(path, 'utf8');
+          const ast = parse(fileContent, {
+            sourceType: 'module',
+            plugins: ['typescript', 'jsx'],
+          });
+          traverse(ast, {
+            ImportDeclaration({ node }) {
+              const modulePath = node.source.value;
+              node.specifiers.forEach((specifier) => {
+                const alias = specifier.local.name;
+                let name;
+                switch (specifier.type) {
+                  case 'ImportSpecifier':
+                    name =
+                      specifier.imported.type === 'Identifier'
+                        ? specifier.imported.name
+                        : 'No name';
+                    break;
+                  case 'ImportDefaultSpecifier':
+                    name = 'default';
+                    break;
+                  case 'ImportNamespaceSpecifier':
+                    name = '*';
+                    break;
+                }
+                if (name) {
+                  ASTParser.logEntryToFile(
+                    `[Info] Import added to component: ${name}`
+                  );
+                  component.addImport(new Import(alias, name, modulePath));
+                }
+              });
+            },
+            ClassDeclaration({ node }) {
+              if (component.isUndefined()) {
                 ASTParser.logEntryToFile(
-                  `[Info] Import added to component: ${name}`
+                  `[Info] Open component by ClassDeclaration`
                 );
-                component.addImport(new Import(alias, name, modulePath));
+                component.open(node);
               }
-            });
-          },
-          ClassDeclaration({ node }) {
-            if (component.isUndefined()) {
-              ASTParser.logEntryToFile(
-                `[Info] Open component by ClassDeclaration`
-              );
-              component.open(node);
-            }
-          },
-          VariableDeclaration({ node }) {
-            if (component.isUndefined()) {
-              ASTParser.logEntryToFile(
-                `[Info] Open component by VariableDeclaration`
-              );
-              component.open(node);
-            }
-          },
-          FunctionDeclaration({ node }) {
-            if (component.isUndefined()) {
-              ASTParser.logEntryToFile(
-                `[Info] Open component by FunctionDeclaration`
-              );
-              component.open(node);
-            }
-          },
-          Identifier({ node }) {
-            if (component.isOpen() && !component.isIdentified()) {
-              ASTParser.logEntryToFile(`[Info] Identify component`);
-              component.identify(node);
-            }
-          },
-          IfStatement() {
-            ASTParser.logEntryToFile(
-              `[Info] Increment level of depth in if statement: ${ifStatementLevel}`
-            );
-            ifStatementLevel++;
-          },
-          JSXOpeningElement({ node }) {
-            const jsxElement = ASTParser.peek(elements);
-            const attribute = ASTParser.peek(attributes);
-            if (jsxElement.isUndefined()) {
-              ASTParser.logEntryToFile(`[Info] Open jsxElement`);
-              jsxElement.open(node);
-            } else {
-              if (
-                jsxElement.isRoute() &&
-                attribute.getElementName() == 'render'
-              ) {
+            },
+            VariableDeclaration({ node }) {
+              if (component.isUndefined()) {
                 ASTParser.logEntryToFile(
-                  `[Info] Open jsxElement within render attribute. Resetting identifier`
+                  `[Info] Open component by VariableDeclaration`
                 );
+                component.open(node);
+              }
+            },
+            FunctionDeclaration({ node }) {
+              if (component.isUndefined()) {
+                ASTParser.logEntryToFile(
+                  `[Info] Open component by FunctionDeclaration`
+                );
+                component.open(node);
+              }
+            },
+            Identifier({ node }) {
+              if (component.isOpen() && !component.isIdentified()) {
+                ASTParser.logEntryToFile(`[Info] Identify component`);
+                component.identify(node);
+              }
+            },
+            IfStatement() {
+              ASTParser.logEntryToFile(
+                `[Info] Increment level of depth in if statement: ${ifStatementLevel}`
+              );
+              ifStatementLevel++;
+            },
+            JSXOpeningElement({ node }) {
+              const jsxElement = ASTParser.peek(elements);
+              const attribute = ASTParser.peek(attributes);
+              if (jsxElement.isUndefined()) {
+                ASTParser.logEntryToFile(`[Info] Open jsxElement`);
                 jsxElement.open(node);
-                jsxElement.isRouteElement = true;
-                jsxElement.resetIdentifier();
-              }
-            }
-          },
-          JSXAttribute({ node }) {
-            const attribute = ASTParser.peek(attributes);
-            if (attribute.isUndefined()) {
-              ASTParser.logEntryToFile(`[Info] Open Attribute`);
-              attribute.open(node);
-            } else {
-              ASTParser.logEntryToFile(`[Info] Open Attribute`);
-              const newAttribute = new Attribute();
-              newAttribute.open(node);
-              attributes.push(newAttribute);
-            }
-          },
-          JSXIdentifier({ node }) {
-            const jsxElement = ASTParser.peek(elements);
-            const attribute = ASTParser.peek(attributes);
-            if (jsxElement.isOpen() && !jsxElement.isIdentified()) {
-              ASTParser.logEntryToFile(`[Info] Identify jsxElement`);
-              jsxElement.identify(node);
-            } else if (attribute.isOpen() && !attribute.isIdentified()) {
-              ASTParser.logEntryToFile(`[Info] Identify Attribute`);
-              attribute.identify(node);
-            }
-          },
-          JSXExpressionContainer({ node }) {
-            const jsxElement = ASTParser.peek(elements);
-            const attribute = ASTParser.peek(attributes);
-            if (attribute.isOpen() && attribute.isIdentified()) {
-              if (node.expression.type === 'Identifier') {
-                ASTParser.logEntryToFile(`[Info] Set value of Attribute`);
-                attribute.setValue(node.expression.name);
+              } else {
                 if (
                   jsxElement.isRoute() &&
-                  attribute.getElementName() == 'component'
+                  attribute.getElementName() == 'render'
                 ) {
-                  ASTParser.logEntryToFile(`[Info] Set name of Route element`);
-                  jsxElement.setName(attribute.getValue());
+                  ASTParser.logEntryToFile(
+                    `[Info] Open jsxElement within render attribute. Resetting identifier`
+                  );
+                  jsxElement.open(node);
                   jsxElement.isRouteElement = true;
+                  jsxElement.resetIdentifier();
                 }
               }
-            }
-          },
-          StringLiteral({ node }) {
-            const jsxElement = ASTParser.peek(elements);
-            const attribute = ASTParser.peek(attributes);
-            if (attribute.isOpen() && attribute.isIdentified()) {
-              ASTParser.logEntryToFile(`[Info] Set value of Attribute`);
-              attribute.setValue(node.value);
-              if (
-                jsxElement.isRoute() &&
-                attribute.getElementName() == 'path'
-              ) {
-                ASTParser.logEntryToFile(`[Info] Set path of Route element`);
-                jsxElement.routePath = attribute.getValue();
+            },
+            JSXAttribute({ node }) {
+              const attribute = ASTParser.peek(attributes);
+              if (attribute.isUndefined()) {
+                ASTParser.logEntryToFile(`[Info] Open Attribute`);
+                attribute.open(node);
+              } else {
+                ASTParser.logEntryToFile(`[Info] Open Attribute`);
+                const newAttribute = new Attribute();
+                newAttribute.open(node);
+                attributes.push(newAttribute);
               }
-            }
-          },
-          exit({ node }) {
-            if (component.close(node)) {
-              if (component.hasJSX()) {
+            },
+            JSXIdentifier({ node }) {
+              const jsxElement = ASTParser.peek(elements);
+              const attribute = ASTParser.peek(attributes);
+              if (jsxElement.isOpen() && !jsxElement.isIdentified()) {
+                ASTParser.logEntryToFile(`[Info] Identify jsxElement`);
+                jsxElement.identify(node);
+              } else if (attribute.isOpen() && !attribute.isIdentified()) {
+                ASTParser.logEntryToFile(`[Info] Identify Attribute`);
+                attribute.identify(node);
+              }
+            },
+            JSXExpressionContainer({ node }) {
+              const jsxElement = ASTParser.peek(elements);
+              const attribute = ASTParser.peek(attributes);
+              if (attribute.isOpen() && attribute.isIdentified()) {
+                if (node.expression.type === 'Identifier') {
+                  ASTParser.logEntryToFile(`[Info] Set value of Attribute`);
+                  attribute.setValue(node.expression.name);
+                  if (
+                    jsxElement.isRoute() &&
+                    attribute.getElementName() == 'component'
+                  ) {
+                    ASTParser.logEntryToFile(`[Info] Set name of Route element`);
+                    jsxElement.setName(attribute.getValue());
+                    jsxElement.isRouteElement = true;
+                  }
+                }
+              }
+            },
+            StringLiteral({ node }) {
+              const jsxElement = ASTParser.peek(elements);
+              const attribute = ASTParser.peek(attributes);
+              if (attribute.isOpen() && attribute.isIdentified()) {
+                ASTParser.logEntryToFile(`[Info] Set value of Attribute`);
+                attribute.setValue(node.value);
+                if (
+                  jsxElement.isRoute() &&
+                  attribute.getElementName() == 'path'
+                ) {
+                  ASTParser.logEntryToFile(`[Info] Set path of Route element`);
+                  jsxElement.routePath = attribute.getValue();
+                }
+              }
+            },
+            exit({ node }) {
+              if (component.close(node)) {
+                if (component.hasJSX()) {
+                  ASTParser.logEntryToFile(
+                    `[Info] Close component: ${component.getElementName()}`
+                  );
+                  parsedFile.components.push(component);
+                }
+                component = new Component(path);
+              }
+
+              const jsxElement = ASTParser.peek(elements);
+              if (jsxElement.close(node)) {
                 ASTParser.logEntryToFile(
-                  `[Info] Close component: ${component.getElementName()}`
+                  `[Info] Close Element: ${jsxElement.getElementName()}`
                 );
-                parsedFile.components.push(component);
+                jsxElement.setOptional(ifStatementLevel > 0);
+                component.addJSXElement(jsxElement);
+                elements.pop();
+                if (elements.length === 0) elements.push(new JSXElement(path));
               }
-              component = new Component(path);
-            }
 
-            const jsxElement = ASTParser.peek(elements);
-            if (jsxElement.close(node)) {
-              ASTParser.logEntryToFile(
-                `[Info] Close Element: ${jsxElement.getElementName()}`
-              );
-              jsxElement.setOptional(ifStatementLevel > 0);
-              component.addJSXElement(jsxElement);
-              elements.pop();
-              if (elements.length === 0) elements.push(new JSXElement(path));
-            }
-
-            const attribute = ASTParser.peek(attributes);
-            if (attribute.close(node)) {
-              ASTParser.logEntryToFile(
-                `[Info] Close Attribute: ${attribute.getElementName()}`
-              );
-              if (jsxElement.isOpen()) {
-                jsxElement.addAttribute(attribute);
+              const attribute = ASTParser.peek(attributes);
+              if (attribute.close(node)) {
+                ASTParser.logEntryToFile(
+                  `[Info] Close Attribute: ${attribute.getElementName()}`
+                );
+                if (jsxElement.isOpen()) {
+                  jsxElement.addAttribute(attribute);
+                }
+                attributes.pop();
+                if (attributes.length === 0) attributes.push(new Attribute());
               }
-              attributes.pop();
-              if (attributes.length === 0) attributes.push(new Attribute());
-            }
 
-            if (node.type == 'IfStatement') {
-              ASTParser.logEntryToFile(
-                `[Info] Reduce level of depth in if statement: ${ifStatementLevel}`
-              );
-              ifStatementLevel--;
-            }
+              if (node.type == 'IfStatement') {
+                ASTParser.logEntryToFile(
+                  `[Info] Reduce level of depth in if statement: ${ifStatementLevel}`
+                );
+                ifStatementLevel--;
+              }
 
-            if (node.type == 'Program') {
-              ASTParser.logEntryToFile(
-                `[Info] Finish parsing file: ${parsedFile.path}`
-              );
-              resolve(parsedFile);
-            }
-          },
-        });
+              if (node.type == 'Program') {
+                ASTParser.logEntryToFile(
+                  `[Info] Finish parsing file: ${parsedFile.path}`
+                );
+                resolve(parsedFile);
+              }
+            },
+          });
+        }
       } catch (err) {
         reject(err);
       }
